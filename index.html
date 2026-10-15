@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="picoboard: a tiny public wall. No accounts. 160 characters.">
+<meta name="color-scheme" content="light dark">
+<title>picoboard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<script>
+window.PICOBOARD_CONFIG = {
+  supabase: { url: "https://pchssostfbzvbgeixpzc.supabase.co", key: "sb_publishable_hLNqs9yifzoqIXwH87nCcw_OSO_LUDc", table: "notes" },
+  contact: "",     // an e-mail for takedown requests, shown in the footer (leave empty to hide)
+  limit: 160,      // characters per note
+  show: 200        // newest notes shown on the wall
+};
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Pixelify+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: a wordmark strip, one note-shaped composer in the middle, then a flat grid of colored note tiles, newest first. */
+:root {
+  --bg: #EEF0F5;
+  --fg: #1B1D2E;
+  --muted: #5E6278;
+  --surface: #FFFFFF;
+  --line: #CFD3E0;
+  --accent: #3043D6;
+  --accent-fg: #FFFFFF;
+  --danger: #C62F4F;
+  --ok: #1E8A5A;
+  --n0: #FFF1A8; --n1: #FFD3E0; --n2: #CFF3DD; --n3: #CFE7FF; --n4: #E4D9FF;
+  --note-fg: #1B1D2E;
+  --shadow: 0 1px 2px rgba(27, 29, 46, .10), 0 6px 18px -10px rgba(27, 29, 46, .25);
+  --display: "Pixelify Sans", "Courier New", monospace;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141622; --fg: #E9EAF2; --muted: #9A9EB8; --surface: #1E2131; --line: #30344A;
+    --accent: #8F99FF; --accent-fg: #10122A; --danger: #FF7A93; --ok: #5FD39A;
+    --n0: #5C5020; --n1: #5E2F42; --n2: #1F4D36; --n3: #1F3F5E; --n4: #3D3062;
+    --note-fg: #F3F3F8;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 20px -10px rgba(0, 0, 0, .6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141622; --fg: #E9EAF2; --muted: #9A9EB8; --surface: #1E2131; --line: #30344A;
+  --accent: #8F99FF; --accent-fg: #10122A; --danger: #FF7A93; --ok: #5FD39A;
+  --n0: #5C5020; --n1: #5E2F42; --n2: #1F4D36; --n3: #1F3F5E; --n4: #3D3062;
+  --note-fg: #F3F3F8;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 20px -10px rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-block: 20px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
+.brand { font-family: var(--display); font-weight: 600; font-size: 2.4rem; line-height: 1; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.brand::before { content: "▮ "; color: var(--accent); }
+.tagline { margin: 6px 0 0; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-size: .95rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.dot.live { background: var(--ok); }
+.dot.preview { background: var(--n0); border: 1px solid var(--muted); }
+.dot.off { background: var(--danger); }
+
+.notice {
+  margin: -8px 0 0; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 6px;
+  color: var(--muted); font-size: .95rem; background: var(--surface);
+}
+
+/* composer: it is the note you are about to pin */
+.composer {
+  width: 100%; max-width: 480px; margin: 0 auto;
+  background: var(--n0); color: var(--note-fg);
+  border-radius: 6px; padding: 14px 14px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  box-shadow: var(--shadow);
+  transition: background-color .25s ease;
+}
+.composer[data-color="0"] { background: var(--n0); }
+.composer[data-color="1"] { background: var(--n1); }
+.composer[data-color="2"] { background: var(--n2); }
+.composer[data-color="3"] { background: var(--n3); }
+.composer[data-color="4"] { background: var(--n4); }
+.composer:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+.composer textarea {
+  width: 100%; min-height: 96px; resize: vertical;
+  font: inherit; font-size: 1.05rem; line-height: 1.4;
+  background: transparent; color: inherit; border: 0; outline: none; padding: 0;
+}
+.composer textarea::placeholder, .composer input::placeholder { color: inherit; opacity: .55; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.composer input[type="text"] {
+  flex: 1 1 140px; min-width: 0;
+  font: inherit; font-size: .95rem; background: transparent; color: inherit;
+  border: 0; border-bottom: 1px solid currentColor; padding: 2px 0; outline: none; opacity: .85;
+}
+.composer input[type="text"]:focus { opacity: 1; border-bottom-width: 2px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.swatches { display: flex; gap: 8px; }
+.swatch {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line);
+  padding: 0; cursor: pointer; background: var(--n); flex: none;
+}
+.swatch[aria-checked="true"] { outline: 2px solid var(--note-fg); outline-offset: 2px; }
+.swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { justify-content: flex-end; }
+.counter { font-family: var(--display); font-size: 1rem; font-variant-numeric: tabular-nums; opacity: .8; margin-right: auto; }
+.counter.low { color: var(--danger); opacity: 1; }
+.flash { font-size: .9rem; opacity: .85; min-height: 1.2em; }
+.post {
+  font-family: var(--display); font-weight: 600; font-size: 1.05rem;
+  background: var(--accent); color: var(--accent-fg);
+  border: 0; border-radius: 4px; padding: 8px 16px; cursor: pointer;
+}
+.post:hover { filter: brightness(1.08); }
+.post:focus-visible { outline: 2px solid var(--note-fg); outline-offset: 2px; }
+.post:disabled { opacity: .55; cursor: default; }
+.error { margin: 0; color: var(--danger); font-size: .95rem; }
+.rules { margin: 0; font-size: .8rem; line-height: 1.35; opacity: .75; }
+
+/* wall */
+.wall {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+  align-items: start;
+}
+@media (min-width: 560px) { .wall { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
+.note, .tile {
+  min-width: 0; min-height: 124px; border-radius: 6px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.note { background: var(--n); color: var(--note-fg); position: relative; box-shadow: var(--shadow); }
+.note p { margin: 0; font-size: 1rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .8rem; opacity: .75; }
+.note footer .who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.note footer .meta { display: flex; align-items: center; gap: 4px; flex: none; }
+.note footer time { font-variant-numeric: tabular-nums; }
+.note .rep {
+  font: inherit; font-size: .9rem; line-height: 1; padding: 2px 5px;
+  border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; opacity: .6;
+}
+.note .rep:hover, .note .rep:focus-visible { opacity: 1; background: rgba(127, 127, 127, .18); outline: none; }
+.note .flagged {
+  position: absolute; top: 6px; left: 8px; font-family: var(--display); font-size: .8rem; line-height: 1;
+  padding: 3px 6px; border-radius: 4px; background: var(--danger); color: #fff;
+}
+.note.has-flag { padding-top: 30px; }
+.wall.owner .note p { padding-right: 24px; }
+.rform { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .85rem; }
+.rform select {
+  flex: 1 1 100%; min-width: 0; font: inherit; font-size: .85rem; padding: 4px 6px;
+  border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+.rform button {
+  font: inherit; font-size: .8rem; padding: 4px 9px; border-radius: 4px;
+  border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer;
+}
+.rform button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.rform button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rform .msg { flex: 1 1 100%; line-height: 1.35; }
+.note .del {
+  position: absolute; top: 6px; right: 6px; display: none;
+  font: inherit; font-size: .8rem; line-height: 1; padding: 4px 7px;
+  border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; opacity: .55;
+}
+.wall.owner .note .del { display: inline-block; }
+.note .del:hover, .note .del:focus-visible { opacity: 1; background: rgba(127, 127, 127, .18); outline: none; }
+.note .del.armed { opacity: 1; background: var(--danger); color: #fff; }
+.tile { grid-column: 1 / -1; border: 1px dashed var(--line); color: var(--muted); align-items: center; justify-content: center; text-align: center; min-height: 140px; }
+.tile.empty strong { font-family: var(--display); font-weight: 600; font-size: 1.2rem; color: var(--fg); }
+.tile.empty { gap: 4px; }
+
+@keyframes pin { from { transform: scale(.96) translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+.note.fresh { animation: pin .28s ease-out; }
+@media (prefers-reduced-motion: reduce) { .note.fresh { animation: none; } .composer { transition: none; } }
+
+.foot { color: var(--muted); font-size: .85rem; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.foot p { margin: 0; max-width: 60ch; }
+.foot .contact { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+.foot code { font-family: var(--display); font-size: 1rem; color: var(--fg); user-select: all; overflow-wrap: anywhere; }
+.foot button {
+  font: inherit; font-size: .8rem; padding: 3px 9px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer;
+}
+.foot button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div>
+      <h1 class="brand">picoboard</h1>
+      <p class="tagline">A tiny public wall. No accounts. 160 characters.</p>
+    </div>
+    <div class="status" aria-live="polite"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></div>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <section class="composer" id="composer" data-color="0" aria-label="Write a note">
+    <label class="sr-only" for="text">Your note</label>
+    <textarea id="text" maxlength="160" rows="3" placeholder="Leave a note for whoever comes next…" autocomplete="off"></textarea>
+    <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+    <div class="row">
+      <label class="sr-only" for="name">Your name (optional)</label>
+      <input id="name" type="text" maxlength="24" placeholder="name (optional)" autocomplete="nickname">
+      <div class="swatches" role="radiogroup" aria-label="Note color" id="swatches"></div>
+    </div>
+    <div class="row actions">
+      <span class="counter" id="counter" aria-live="polite">160</span>
+      <span class="flash" id="flash" aria-live="polite"></span>
+      <button class="post" id="post" type="button">Pin it</button>
+    </div>
+    <p class="error" id="error" role="alert" hidden></p>
+    <p class="rules">House rules: nothing illegal, no personal details about other people, no links. The owner may remove any note.</p>
+  </section>
+
+  <section class="wall" id="wall" aria-label="Notes on the wall">
+    <div class="tile" id="loading">Loading the wall…</div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var CFG = window.PICOBOARD_CONFIG || {};
+  var LIMIT = CFG.limit || 160;
+  var SHOW = CFG.show || 200;
+  var NAME_LIMIT = 24;
+  var COLORS = 5;
+  var CONTACT = String(CFG.contact || "").trim();
+  var LINK_RE = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|net|org|io|fi|se|de|uk|co|ru|cn|info|biz|xyz|me|tv|app|dev|site|online|top|shop|store|link|click|eu|nl|fr|es|it|pl|no|dk|ee|lv|lt)\b|\S+\.[a-z]{2,}\/\S+)/i;
+  var REASONS = ["Illegal content", "Harassment or a threat", "Someone's personal details", "Spam", "Something else"];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var composer = $("composer"), ta = $("text"), nameIn = $("name"), hp = $("website");
+  var swatches = $("swatches"), counter = $("counter"), flash = $("flash"), postBtn = $("post");
+  var errorEl = $("error"), notice = $("notice"), wall = $("wall"), dot = $("dot"), statusText = $("statusText"), foot = $("foot");
+
+  var state = { color: 0, notes: [], store: null, readonly: false, known: null, reports: {}, unsub: null, unsubReports: null };
+  var els = {};
+  var emptyEl = null;
+
+  /* ---------- small helpers ---------- */
+  function uid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function rel(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    var s = Math.round((Date.now() - t) / 1000);
+    if (s < 45) return "just now";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60);
+    if (h < 24) return h + (h === 1 ? " hour ago" : " hours ago");
+    var d = Math.round(h / 24);
+    if (d < 7) return d === 1 ? "yesterday" : d + " days ago";
+    return new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+  function setError(msg) { errorEl.textContent = msg || ""; errorEl.hidden = !msg; }
+  function setFlash(msg) {
+    flash.textContent = msg || "";
+    if (msg) setTimeout(function () { if (flash.textContent === msg) flash.textContent = ""; }, 2500);
+  }
+  function setStatus(kind, text) { dot.className = "dot " + kind; statusText.textContent = text; }
+  function setNotice(text) { notice.textContent = text || ""; notice.hidden = !text; }
+  function humanError(e) {
+    var code = e && e.code;
+    if (code === "quota_exceeded") return "The wall is full. The owner needs to clear some notes.";
+    if (code === "resource_exhausted") return "Slow down a little, then try again.";
+    if (code === "invalid_argument") return "You can read this wall, but posting isn't open to you here.";
+    if (code === "revoked" || code === "unavailable") return "Lost the connection to the wall. Reload to try again.";
+    return (e && e.message) || "That didn't go through. Try again.";
+  }
+  function reportFallback() { return "Reporting isn't available here. " + (CONTACT ? "Email " + CONTACT + "." : "Contact the board owner."); }
+  function normalize(id, b) {
+    return { id: String(id), text: String(b.text || ""), name: String(b.name || ""), color: (b.color | 0) % COLORS, createdAt: String(b.createdAt || b.created_at || "") };
+  }
+
+  /* ---------- storage adapters: same shape, three homes ----------
+     subscribe(fn, onErr) -> unsubscribe     add(note) -> Promise
+     remove(id) -> Promise (owner only)      report(id, reason) -> Promise, or null when unsupported
+     watchReports(fn) -> unsubscribe, or null (owner only) */
+  function localStore() {
+    var KEY = "picoboard.notes";
+    var listeners = [];
+    function read() { try { return JSON.parse(lsGet(KEY) || "[]"); } catch (e) { return []; } }
+    function write(arr) { lsSet(KEY, JSON.stringify(arr)); }
+    function emit() { var n = read(); listeners.forEach(function (fn) { fn(n); }); }
+    return {
+      kind: "local", canDelete: true, canWrite: true, report: null, watchReports: null,
+      subscribe: function (fn) {
+        listeners.push(fn); fn(read());
+        var h = function (ev) { if (ev.key === KEY) emit(); };
+        window.addEventListener("storage", h);
+        return function () { listeners = listeners.filter(function (x) { return x !== fn; }); window.removeEventListener("storage", h); };
+      },
+      add: function (note) { var arr = read(); arr.unshift(note); write(arr.slice(0, SHOW)); emit(); return Promise.resolve(); },
+      remove: function (id) { write(read().filter(function (n) { return n.id !== id; })); emit(); return Promise.resolve(); }
+    };
+  }
+
+  function claudeStore() {
+    if (!window.claude || typeof window.claude.use !== "function") return Promise.resolve(null);
+    return window.claude.use("db").then(function (db) {
+      if (!db) return null;
+      return window.claude.use("user").then(function (user) {
+        var ps = user ? [user.isOwner(), user.can("data.write"), user.id()] : [false, null, null];
+        return Promise.all(ps).then(function (r) {
+          var isOwner = r[0], canWrite = r[1], me = r[2];
+          var col = db.collection("notes");
+          return {
+            kind: "claude", canDelete: isOwner, canWrite: canWrite,
+            subscribe: function (fn, onErr) {
+              return col.orderBy("createdAt", "desc").limit(SHOW).onSnapshot(function (snap) {
+                fn(snap.docs.map(function (d) { return normalize(d.id, d.data() || {}); }));
+              }, function (e) { if (onErr) onErr(e); });
+            },
+            add: function (note) { return col.add({ text: note.text, name: note.name, color: note.color, createdAt: note.createdAt, by: me }); },
+            remove: function (id) { return db.doc("notes/" + id).delete(); },
+            /* each reporter keeps one private document; the owner reads them all */
+            report: me ? function (noteId, reason) {
+              var ref = db.doc("reports/" + me);
+              return ref.get().then(function (snap) {
+                var body = snap.exists ? JSON.parse(JSON.stringify(snap.data() || {})) : {};
+                var items = body.items || {};
+                items[noteId] = { reason: reason, createdAt: new Date().toISOString() };
+                return ref.set({ items: items, updatedAt: new Date().toISOString() });
+              });
+            } : null,
+            watchReports: isOwner ? function (fn, onErr) {
+              return db.collection("reports").onSnapshot(function (snap) {
+                var counts = {};
+                snap.docs.forEach(function (d) {
+                  var items = (d.data() || {}).items || {};
+                  Object.keys(items).forEach(function (k) { counts[k] = (counts[k] || 0) + 1; });
+                });
+                fn(counts);
+              }, function (e) { if (onErr) onErr(e); });
+            } : null
+          };
+        });
+      });
+    });
+  }
+
+  function supabaseStore(cfg) {
+    var rest = cfg.url.replace(/\/+$/, "") + "/rest/v1/";
+    var notesUrl = rest + (cfg.table || "notes"), reportsUrl = rest + "reports";
+    var headers = { "apikey": cfg.key, "Authorization": "Bearer " + cfg.key, "Content-Type": "application/json", "Prefer": "return=minimal" };
+    function errText(r) {
+      return r.text().then(function (t) {
+        try { var j = JSON.parse(t); return j.message || j.hint || t; } catch (e) { return t || (r.status + " " + r.statusText); }
+      });
+    }
+    function check(r) { if (!r.ok) return errText(r).then(function (m) { throw new Error(m); }); return r; }
+    function fetchAll() {
+      return fetch(notesUrl + "?select=id,text,name,color,created_at&order=created_at.desc&limit=" + SHOW, { headers: headers })
+        .then(check).then(function (r) { return r.json(); })
+        .then(function (rows) { return rows.map(function (row) { return normalize(row.id, row); }); });
+    }
+    var store = {
+      kind: "supabase", canDelete: false, canWrite: true, watchReports: null,
+      subscribe: function (fn, onErr) {
+        var alive = true, timer = null;
+        function tick() {
+          if (!alive || document.visibilityState === "hidden") return;
+          fetchAll().then(function (n) { if (alive) fn(n); }, function (e) { if (alive && onErr) onErr(e); });
+        }
+        tick();
+        timer = setInterval(tick, 15000);
+        var vis = function () { if (document.visibilityState === "visible") tick(); };
+        document.addEventListener("visibilitychange", vis);
+        store.refresh = tick;
+        return function () { alive = false; clearInterval(timer); document.removeEventListener("visibilitychange", vis); };
+      },
+      add: function (note) {
+        return fetch(notesUrl, { method: "POST", headers: headers, body: JSON.stringify({ text: note.text, name: note.name || null, color: note.color }) }).then(check);
+      },
+      remove: function () { return Promise.reject(new Error("Remove notes from your Supabase dashboard.")); },
+      report: function (noteId, reason) {
+        return fetch(reportsUrl, { method: "POST", headers: headers, body: JSON.stringify({ note_id: noteId, reason: reason }) }).then(check);
+      }
+    };
+    return store;
+  }
+
+  /* ---------- notes on the wall ---------- */
+  function updateFlag(el, id) {
+    var n = state.reports[id] || 0;
+    var badge = el.querySelector(".flagged");
+    if (n && !badge) { badge = document.createElement("span"); badge.className = "flagged"; el.insertBefore(badge, el.firstChild); }
+    if (badge) { badge.textContent = n + (n === 1 ? " report" : " reports"); badge.hidden = !n; }
+    el.classList.toggle("has-flag", !!n);
+  }
+  function refreshMeta(el, n) {
+    var t = el.querySelector("time");
+    if (t) t.textContent = rel(n.createdAt);
+    updateFlag(el, n.id);
+  }
+  function noteEl(n, fresh) {
+    var el = document.createElement("article");
+    el.className = "note" + (fresh ? " fresh" : "");
+    el.style.setProperty("--n", "var(--n" + n.color + ")");
+    var p = document.createElement("p"); p.textContent = n.text; el.appendChild(p);
+    var f = document.createElement("footer");
+    var who = document.createElement("span"); who.className = "who"; who.textContent = n.name || "anonymous"; f.appendChild(who);
+    var meta = document.createElement("span"); meta.className = "meta";
+    var t = document.createElement("time"); t.dateTime = n.createdAt; t.textContent = rel(n.createdAt);
+    t.title = n.createdAt ? new Date(n.createdAt).toLocaleString() : ""; meta.appendChild(t);
+    if (!(state.store && state.store.canDelete)) {
+      var rep = document.createElement("button"); rep.type = "button"; rep.className = "rep"; rep.textContent = "⚑";
+      rep.title = "Report this note"; rep.setAttribute("aria-label", "Report this note");
+      rep.addEventListener("click", function () { openReport(el, n); });
+      meta.appendChild(rep);
+    }
+    f.appendChild(meta);
+    el.appendChild(f);
+    if (state.store && state.store.canDelete) {
+      var del = document.createElement("button"); del.type = "button"; del.className = "del"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this note");
+      del.addEventListener("click", function () { armDelete(del, n.id); });
+      el.appendChild(del);
+    }
+    updateFlag(el, n.id);
+    return el;
+  }
+  function armDelete(btn, id) {
+    if (!btn.classList.contains("armed")) {
+      btn.classList.add("armed"); btn.textContent = "remove?";
+      setTimeout(function () { btn.classList.remove("armed"); btn.textContent = "×"; }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    state.store.remove(id).then(null, function (e) { btn.disabled = false; setError(humanError(e)); });
+  }
+  function openReport(el, n) {
+    if (el.querySelector(".rform")) return;
+    var f = document.createElement("form"); f.className = "rform";
+    var sel = document.createElement("select"); sel.setAttribute("aria-label", "Reason for the report");
+    REASONS.forEach(function (r) { var o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
+    var send = document.createElement("button"); send.type = "submit"; send.className = "primary"; send.textContent = "Send report";
+    var cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
+    var msg = document.createElement("span"); msg.className = "msg"; msg.setAttribute("aria-live", "polite");
+    f.appendChild(sel); f.appendChild(send); f.appendChild(cancel); f.appendChild(msg);
+    cancel.addEventListener("click", function () { f.remove(); });
+    function done(text) { sel.hidden = true; send.hidden = true; cancel.textContent = "Close"; msg.textContent = text; }
+    f.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      if (!state.store.report || state.store.canWrite === false) { done(reportFallback()); return; }
+      send.disabled = true;
+      state.store.report(n.id, sel.value).then(function () {
+        done("Thanks. The owner will take a look.");
+        setTimeout(function () { f.remove(); }, 4000);
+      }, function (e) {
+        if (e && e.code === "invalid_argument") { done(reportFallback()); return; }
+        send.disabled = false; msg.textContent = humanError(e);
+      });
+    });
+    el.appendChild(f); sel.focus();
+  }
+  function render() {
+    var loading = $("loading"); if (loading) loading.remove();
+    if (!emptyEl) {
+      emptyEl = document.createElement("div"); emptyEl.className = "tile empty";
+      var s = document.createElement("strong"); s.textContent = "Nothing on the wall yet."; emptyEl.appendChild(s);
+      var sub = document.createElement("span"); sub.className = "sub"; emptyEl.appendChild(sub);
+      wall.appendChild(emptyEl);
+    }
+    emptyEl.querySelector(".sub").textContent = state.readonly ? "Notes will show up here." : "Leave the first note.";
+    emptyEl.hidden = state.notes.length > 0;
+    var seen = {};
+    state.notes.forEach(function (n, i) {
+      seen[n.id] = true;
+      var el = els[n.id];
+      if (!el) { el = noteEl(n, state.known !== null); els[n.id] = el; } else { refreshMeta(el, n); }
+      var at = wall.children[i];
+      if (at !== el) wall.insertBefore(el, at || null);
+    });
+    Object.keys(els).forEach(function (id) { if (!seen[id]) { els[id].remove(); delete els[id]; } });
+    if (wall.lastElementChild !== emptyEl) wall.appendChild(emptyEl);
+    state.known = seen;
+    var count = state.notes.length >= SHOW ? SHOW + "+" : String(state.notes.length);
+    var local = state.store && state.store.kind === "local";
+    setStatus(local ? "preview" : "live", count + (count === "1" ? " note" : " notes") + (local ? " · preview" : " · live"));
+  }
+  setInterval(function () {
+    Object.keys(els).forEach(function (id) { var t = els[id].querySelector("time"); if (t) t.textContent = rel(t.dateTime); });
+  }, 60000);
+
+  /* ---------- footer: what is stored, and whom to contact ---------- */
+  function renderFoot(kind) {
+    foot.textContent = "";
+    var p = document.createElement("p");
+    if (kind === "supabase") p.textContent = "Everything here is public. Each note is stored with the time it was pinned and the network address it came from, so abuse can be stopped. That information is never shown.";
+    else if (kind === "claude") p.textContent = "Everything here is public to everyone who can open this page. Notes are stored with the time and the account that pinned them; the account is never shown.";
+    else p.textContent = "Preview mode: nothing you write here leaves this browser.";
+    foot.appendChild(p);
+    if (CONTACT) {
+      var c = document.createElement("div"); c.className = "contact";
+      var label = document.createElement("span"); label.textContent = "Takedown requests and questions:"; c.appendChild(label);
+      var code = document.createElement("code"); code.textContent = CONTACT; c.appendChild(code);
+      var copy = document.createElement("button"); copy.type = "button"; copy.textContent = "Copy";
+      copy.addEventListener("click", function () {
+        var ok = function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy"; }, 2000); };
+        var fallback = function () { var r = document.createRange(); r.selectNodeContents(code); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(CONTACT).then(ok, fallback); else fallback();
+      });
+      c.appendChild(copy);
+      foot.appendChild(c);
+    }
+  }
+
+  /* ---------- composer ---------- */
+  function setColor(c) {
+    state.color = c % COLORS; composer.dataset.color = String(state.color);
+    var btns = swatches.querySelectorAll(".swatch");
+    for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-checked", i === state.color ? "true" : "false");
+    lsSet("picoboard.color", String(state.color));
+  }
+  for (var c = 0; c < COLORS; c++) (function (c) {
+    var b = document.createElement("button"); b.type = "button"; b.className = "swatch"; b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", ["yellow", "pink", "mint", "sky", "lilac"][c]); b.style.setProperty("--n", "var(--n" + c + ")");
+    b.addEventListener("click", function () { setColor(c); ta.focus(); });
+    swatches.appendChild(b);
+  })(c);
+  function updateCounter() {
+    var left = LIMIT - ta.value.length;
+    counter.textContent = String(left);
+    counter.classList.toggle("low", left <= 15);
+  }
+  ta.addEventListener("input", function () { updateCounter(); lsSet("picoboard.draft", ta.value); if (!errorEl.hidden && !LINK_RE.test(ta.value)) setError(""); });
+  nameIn.addEventListener("input", function () { lsSet("picoboard.name", nameIn.value); });
+  ta.addEventListener("keydown", function (ev) { if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); post(); } });
+  postBtn.addEventListener("click", post);
+
+  function makeReadonly(msg) {
+    state.readonly = true; composer.hidden = true; setNotice(msg); render();
+  }
+  function post() {
+    var text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    setError("");
+    if (LINK_RE.test(text)) { setError("Links aren't allowed on the wall. Say it in words instead."); ta.focus(); return; }
+    if (hp.value) { ta.value = ""; updateCounter(); setFlash("Pinned."); return; } /* honeypot: bots fill hidden fields */
+    var note = { id: uid(), text: text.slice(0, LIMIT), name: nameIn.value.trim().slice(0, NAME_LIMIT), color: state.color, createdAt: new Date().toISOString() };
+    postBtn.disabled = true;
+    state.store.add(note).then(function () {
+      ta.value = ""; lsSet("picoboard.draft", ""); updateCounter(); setFlash("Pinned.");
+      if (state.store.refresh) state.store.refresh();
+    }, function (e) {
+      if (e && e.code === "invalid_argument" && state.store.kind === "claude") { makeReadonly("This wall is read-only for you."); return; }
+      setError(humanError(e));
+    }).then(function () { postBtn.disabled = false; });
+  }
+
+  /* ---------- boot ---------- */
+  function start(hot) {
+    hot = hot || {};
+    ta.value = hot.draft != null ? hot.draft : (lsGet("picoboard.draft") || "");
+    nameIn.value = hot.name != null ? hot.name : (lsGet("picoboard.name") || "");
+    var savedColor = hot.color != null ? hot.color : parseInt(lsGet("picoboard.color") || "0", 10);
+    setColor(isNaN(savedColor) ? 0 : savedColor);
+    updateCounter();
+    if (window.claude && window.claude.hot && typeof window.claude.hot.snapshot === "function") {
+      window.claude.hot.snapshot(function () { return { draft: ta.value, name: nameIn.value, color: state.color }; });
+    }
+    renderFoot("");
+
+    var sb = CFG.supabase || {};
+    var chosen = (sb.url && sb.key) ? Promise.resolve(supabaseStore(sb)) : claudeStore();
+    chosen.then(function (store) {
+      if (!store) { store = localStore(); setNotice("Preview mode: notes you pin here are saved only in this browser."); }
+      state.store = store;
+      renderFoot(store.kind);
+      if (store.canWrite === false) makeReadonly("This wall is read-only for you.");
+      wall.classList.toggle("owner", !!store.canDelete);
+      state.unsub = store.subscribe(function (notes) {
+        state.notes = notes.slice(0, SHOW); render();
+      }, function (e) {
+        setStatus("off", "offline"); setError(humanError(e));
+      });
+      if (store.watchReports) {
+        state.unsubReports = store.watchReports(function (counts) {
+          state.reports = counts;
+          Object.keys(els).forEach(function (id) { updateFlag(els[id], id); });
+        }, function () { /* report badges are a convenience; the wall keeps working without them */ });
+      }
+    });
+  }
+  var hotApi = window.claude && window.claude.hot;
+  if (hotApi && typeof hotApi.ready === "function") hotApi.ready(start); else start(hotApi && hotApi.data);
+})();
+</script>
+</body>
+</html>
